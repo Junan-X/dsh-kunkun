@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "坤坤皮肤",
-    "description": "在界面右下角固定显示坤坤立绘。",
+    "description": "在界面右下角显示坤坤立绘，可切换静态图、篮球动图或上传自己的图片。",
     "detail": "docs/DETAIL.md"
   }
 }

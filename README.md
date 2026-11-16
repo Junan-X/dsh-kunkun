@@ -1,8 +1,8 @@
 # Kunkun skin（坤坤皮肤）
 
-Shows the Kunkun mascot fixed at the bottom-right corner of the DeepSeek Harness shell.
+Shows the Kunkun mascot fixed at the bottom-right corner of the DeepSeek Harness shell, with a settings page to switch the image — including your own uploaded picture.
 
-在 DeepSeek Harness 界面右下角固定显示坤坤立绘。
+在 DeepSeek Harness 界面右下角固定显示坤坤立绘，并提供设置页切换立绘（静态图 / 篮球动图 / 自己上传的图片）。
 
 ## Install / 安装
 
@@ -16,12 +16,23 @@ Or in the app: **Plugins → Add plugin** and enter the package spec above.
 
 Restart DSH after installing. 安装后重启 DSH 生效。
 
+## Settings / 设置
+
+Two entries open the same panel: **Settings → Kunkun skin**, or the bundle's own page under **Plugins → dsh-kunkun**.
+
+两个入口打开同一面板：**设置 → 坤坤皮肤**，或 **插件 → dsh-kunkun** 详情页配置区。
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| Show mascot / 显示坤坤立绘 | on | Off hides the mascot; the settings entry stays available. |
+| Mascot image / 立绘样式 | basketball animation | Switch between the still Kunkun, the basketball animation, and an uploaded custom image (GIF/WebP/PNG/JPEG, ≤ 5 MB, stored in IndexedDB). |
+
 ## Notes / 说明
 
 - The mascot is decorative and non-interactive (`pointer-events: none`); it never blocks clicks on the UI underneath.
-- The image is embedded in `client.js` as a data URI, so the plugin needs no asset server route.
+- Built-in images are embedded in `client.js` as data URIs; an uploaded image lives in the browser's IndexedDB, so nothing is sent over the network.
 - Disable the bundle in Plugins to remove the mascot; no other UI is changed.
-- 立绘纯装饰、不拦截鼠标事件；图片以 data URI 内嵌，无需资源服务器。在插件页停用该 bundle 即可移除。
+- 立绘纯装饰、不拦截鼠标事件；内置图片以 data URI 内嵌，上传图片存在浏览器 IndexedDB，不联网。在插件页停用该 bundle 即可移除。
 
 ## License
 
