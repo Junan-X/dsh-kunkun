@@ -347,15 +347,18 @@ window.__ModuleLoader__.load({
 
     /* ---------------- plugin ---------------- */
     return {
-      inject: ["slots"],
+      inject: ["slots", "locale"],
       apply(ctx) {
-        ctx.effect(() => ctx.locale.register(NS, { zh, en }), "dsh-kunkun: locale");
         try {
+          ctx.effect(() => ctx.locale.register(NS, { zh, en }), "dsh-kunkun: locale");
           const bound = ctx.locale.bind(NS);
           translate = (key) => {
             try { return bound(key); } catch { return zh[key] ?? en[key] ?? key; }
           };
-        } catch {}
+        } catch {
+          // locale 不可用时保持内联中英文案，绝不让它中断下面的 slots 注册。
+          translate = (key) => zh[key] ?? en[key] ?? key;
+        }
 
         ctx.effect(
           () =>
