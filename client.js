@@ -363,12 +363,22 @@ window.__ModuleLoader__.load({
           translate = (key) => zh[key] ?? en[key] ?? key;
         }
 
+        const diagnose = (where) => (err) => {
+          console.error("[dsh-kunkun] " + where + " registration failed:", err);
+        };
+        const guard = (where, fn) => () => {
+          try { return fn(); } catch (err) { diagnose(where)(err); }
+        };
+
         ctx.effect(
           () =>
-            ctx.slots.inject("shell.overlay", () =>
-              ctx.slots.register(
-                { name: "shell.overlay", id: "kunkun-mascot", order: 100 },
-                Mascot
+            ctx.slots.inject(
+              "shell.overlay",
+              guard("shell.overlay", () =>
+                ctx.slots.register(
+                  { name: "shell.overlay", id: "kunkun-mascot", order: 100 },
+                  Mascot
+                )
               )
             ),
           "dsh-kunkun: mascot overlay on native shell"
@@ -376,15 +386,18 @@ window.__ModuleLoader__.load({
 
         ctx.effect(
           () =>
-            ctx.slots.inject("settings.section", () =>
-              ctx.slots.register(
-                {
-                  name: "settings.section",
-                  id: "dsh-kunkun",
-                  order: 50,
-                  label: () => translate("nav"),
-                },
-                SettingsPanel
+            ctx.slots.inject(
+              "settings.section",
+              guard("settings.section", () =>
+                ctx.slots.register(
+                  {
+                    name: "settings.section",
+                    id: "dsh-kunkun",
+                    order: 50,
+                    label: () => translate("nav"),
+                  },
+                  SettingsPanel
+                )
               )
             ),
           "dsh-kunkun: settings section"
@@ -392,10 +405,13 @@ window.__ModuleLoader__.load({
 
         ctx.effect(
           () =>
-            ctx.slots.inject("plugins.bundle.config", () =>
-              ctx.slots.register(
-                { name: "plugins.bundle.config", key: "dsh-kunkun" },
-                SettingsPanel
+            ctx.slots.inject(
+              "plugins.bundle.config",
+              guard("plugins.bundle.config", () =>
+                ctx.slots.register(
+                  { name: "plugins.bundle.config", key: "dsh-kunkun" },
+                  SettingsPanel
+                )
               )
             ),
           "dsh-kunkun: bundle config"
