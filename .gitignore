@@ -1,0 +1,8 @@
+# 参考资料（第三方皮肤源码与样本），不上传
+.analysis/
+.market-sample/
+
+# 系统与编辑器
+.DS_Store
+node_modules/
+*.log
