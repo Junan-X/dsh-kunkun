@@ -76,8 +76,11 @@ window.__ModuleLoader__.load({
     function useSettings() {
       const [value, update] = React.useState(state);
       React.useEffect(() => {
-        listeners.add(update);
-        return () => listeners.delete(update);
+        // 必须包一层：直接把 update 注册进去，setState 会以 undefined 调用它，
+        // React 会把组件状态置空，下一次渲染就崩。
+        const fn = () => update(state);
+        listeners.add(fn);
+        return () => listeners.delete(fn);
       }, []);
       return [value, setState];
     }
