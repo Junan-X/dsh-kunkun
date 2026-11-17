@@ -469,7 +469,22 @@ window.__ModuleLoader__.load({
         }
       }, [dragValue, efforts.length, committedIndex]);
 
-      if (!available || !reasoning || efforts.length < 2 || committedIndex < 0) return null;
+      if (!available || !reasoning || efforts.length < 2 || committedIndex < 0) {
+        if (!EffortSlider.hideLogged) {
+          EffortSlider.hideLogged = true;
+          const reason = !available
+            ? "unavailable (no model directory or addressed subagent)"
+            : !reasoning
+              ? "no reasoning data (current=" + JSON.stringify(state?.current ?? null) + " groups=" + (state?.groups?.length ?? 0) + ")"
+              : "efforts<2 (" + efforts.length + ")";
+          console.info("[dsh-kunkun] slider hidden: " + reason);
+        }
+        return null;
+      }
+      if (!EffortSlider.readyLogged) {
+        EffortSlider.readyLogged = true;
+        console.info("[dsh-kunkun] slider ready: " + efforts.length + " efforts, current=" + (reasoning.selection.reasoningEffort ?? reasoning.defaultEffort ?? "?"));
+      }
 
       const commit = async (raw) => {
         const idx = Math.min(efforts.length - 1, Math.max(0, Math.round(raw)));
@@ -660,14 +675,26 @@ window.__ModuleLoader__.load({
         let service;
         try { service = typeof ctx.get === "function" ? ctx.get("modelDirectories") : undefined; } catch { service = undefined; }
         if (!service || typeof service.directoryFor !== "function") service = ctx.modelDirectories;
-        if (!service || typeof service.directoryFor !== "function") return empty;
+        if (!service || typeof service.directoryFor !== "function") {
+          if (!resolveSliderProps.logged) {
+            resolveSliderProps.logged = true;
+            console.warn("[dsh-kunkun] slider hidden: modelDirectories service not resolvable via ctx.get/ctx.modelDirectories");
+          }
+          return empty;
+        }
         const sessions = ctx.sessions;
         const addressed =
           typeof sessions?.subagentAddress === "function"
             ? sessions.subagentAddress(sessionId)
             : undefined;
         const directory = service.directoryFor(sessionId);
-        if (!directory || !directory.store) return empty;
+        if (!directory || !directory.store) {
+          if (!resolveSliderProps.logged) {
+            resolveSliderProps.logged = true;
+            console.warn("[dsh-kunkun] slider hidden: directoryFor(" + JSON.stringify(sessionId) + ") returned no store");
+          }
+          return empty;
+        }
         return {
           available: addressed === undefined,
           directory: directory.store,
