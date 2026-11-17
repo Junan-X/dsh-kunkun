@@ -107,20 +107,17 @@ window.__ModuleLoader__.load({
 
     /* ---------------- animation speed store ---------------- */
     // The effort slider drives playback speed live while dragging; the mascot
-    // strip reads it through useSpeed. Geometric ramp: slider ends are 0.5×–2×.
-    const SPEED_MIN = 0.5;
-    const SPEED_MAX = 2;
+    // strip reads it through useSpeed. Geometric ramp: slider ends are 30%–300%.
+    const SPEED_MIN = 0.3;
+    const SPEED_MAX = 3;
     let speedState = 1;
     const speedListeners = new Set();
     function speedForRatio(ratio) {
       const x = Math.min(1, Math.max(0, ratio));
       return SPEED_MIN * Math.pow(SPEED_MAX / SPEED_MIN, x);
     }
-    function speedForIndex(index, count) {
-      return speedForRatio(count <= 1 ? 0 : index / (count - 1));
-    }
     function setSpeed(value) {
-      const next = Math.min(4, Math.max(0.25, value));
+      const next = Math.min(SPEED_MAX, Math.max(SPEED_MIN, value));
       if (Math.abs(next - speedState) < 1e-6) return;
       speedState = next;
       for (const fn of speedListeners) fn();
@@ -516,7 +513,8 @@ window.__ModuleLoader__.load({
       };
     }
 
-    const SUB = 10; // sub-stops per effort gap → continuous speed while dragging
+    /* 连续位置 ↔ 区域：滑轨按档位数均分为 N 个区域，
+       落区即档位，位置本身连续（速度可取任意值）。 */
     function ratioForSpeed(value) {
       const ratio = Math.log(value / SPEED_MIN) / Math.log(SPEED_MAX / SPEED_MIN);
       return Math.min(1, Math.max(0, ratio));
@@ -533,40 +531,57 @@ window.__ModuleLoader__.load({
       const committedIndex = reasoning
         ? selectedEffortIndex(efforts, reasoning.selection.reasoningEffort, reasoning.defaultEffort)
         : -1;
-      // The slider never hides: with ≥2 efforts it also commits the reasoning
-      // level; otherwise it degrades to animation-speed control only (the
-      // reference skin hides itself on such models — we don't).
+      // 滑块永不隐藏：≥2 档时同时提交推理等级，否则降级为纯动图调速
       const bindEffort = available && reasoning !== null && efforts.length >= 2 && committedIndex >= 0;
+      // N 个区域：有档位时 N = efforts.length，纯调速时 1 个区域
+      const regions = bindEffort ? efforts.length : 1;
+      const max = regions;
+      const baseRegion = bindEffort ? Math.max(0, committedIndex) : 0;
+      const regionOf = (v) => Math.min(regions - 1, Math.max(0, Math.floor(v)));
+      const centerOf = (r) => r + 0.5;
+
       const [dragValue, setDragValue] = React.useState(null);
+      const [pos, setPos] = React.useState(null); // 松手后的连续位置（任意值）
       const [pending, setPending] = React.useState(false);
       const pendingRef = React.useRef(false);
       const syncRef = React.useRef(null);
       if (syncRef.current === null) syncRef.current = createEffortSync();
       const sync = syncRef.current;
-      const max = bindEffort ? Math.max(1, efforts.length - 1) : 1;
-      // 模型身份：provider/model/档位集合任一变化都要放弃"钉住"
+      // 模型身份：provider/model/档位集合任一变化都要放弃"钉住"并归零位置
       const modelKey = reasoning
         ? JSON.stringify([reasoning.selection.provider, reasoning.selection.model, efforts.map((e) => e.id)])
         : "none";
-      const committedRaw = bindEffort
-        ? Math.max(0, committedIndex)
-        : ratioForSpeed(speed);
-      // 拖动中优先用拖动值；否则用提交同步器钉住的值；最后才跟随宿主
-      const held = dragValue === null ? sync.hold(modelKey, committedRaw) : null;
-      const committedValue = held === null ? committedRaw : held;
-      const value = dragValue === null ? committedValue : dragValue;
+      const heldRegion = dragValue === null ? sync.hold(modelKey, baseRegion) : null;
+
+      // 位置优先级：拖动值 > 提交等待期的钉住位置 > 区域中心（外部改档时归中）
+      // 纯调速模式没有区域可言，默认沿用当前速度对应的位置（进入调速模式时不跳变）
+      const defaultPos = () => (bindEffort ? centerOf(baseRegion) : Math.min(1, Math.max(0, ratioForSpeed(speed))));
+      let value;
+      if (dragValue !== null) value = dragValue;
+      else if (heldRegion !== null) value = pos === null ? defaultPos() : pos;
+      else value = pos !== null && regionOf(pos) === baseRegion ? pos : defaultPos();
 
       React.useEffect(() => {
         if (available && directory) load();
       }, [available, directory, load]);
 
-      // Only effort mode follows the host selection; speed-only keeps whatever
-      // the user last dragged (the position derives from the speed store).
+      // 位置即速度：任意连续值都映射到 30%–300%
       React.useEffect(() => {
-        if (dragValue === null && bindEffort && committedIndex >= 0) {
-          setSpeed(speedForIndex(committedIndex, efforts.length));
-        }
-      }, [dragValue, bindEffort, committedIndex, efforts.length]);
+        setSpeed(speedForRatio(max > 0 ? value / max : 0));
+      }, [value, max]);
+
+      // 宿主从别处改了档位（不是本次提交）→ 位置归到那个区域中心
+      React.useEffect(() => {
+        if (dragValue !== null || pendingRef.current) return;
+        if (pos !== null && regionOf(pos) !== baseRegion) setPos(null);
+      }, [baseRegion, dragValue, pos]);
+
+      // 换模型：位置清空，回到新模型当前档位的区域中心
+      React.useEffect(() => {
+        setPos(null);
+        setDragValue(null);
+        sync.reset();
+      }, [modelKey]);
 
       const mode = bindEffort ? "effort" : "speed-only";
       const degradeReason = !available
@@ -579,37 +594,37 @@ window.__ModuleLoader__.load({
       sliderDiag.render = bindEffort
         ? {
             mode,
+            regions,
             efforts: efforts.length,
             current: reasoning.selection.reasoningEffort ?? reasoning.defaultEffort ?? null,
+            position: Number(value.toFixed(3)),
           }
         : {
             mode,
+            regions,
             reason: degradeReason ?? "n/a",
             snapshotKeys: state ? Object.keys(state) : String(state),
             current: state?.current ?? null,
             groups: state?.groups?.length ?? 0,
             efforts: efforts.length,
+            position: Number(value.toFixed(3)),
           };
       if (!EffortSlider.modeLogged) {
         EffortSlider.modeLogged = true;
         console.info(
           "[dsh-kunkun] slider mode: " + mode +
-          (degradeReason ? " (" + degradeReason + ")" : " — " + efforts.length + " efforts")
+          (degradeReason ? " (" + degradeReason + ")" : " — " + efforts.length + " efforts / " + regions + " regions")
         );
       }
 
       const commit = async (raw) => {
         setDragValue(null);
-        if (!bindEffort) {
-          setSpeed(speedForRatio(max <= 0 ? 0 : Number(raw) / max));
-          return;
-        }
-        const idx = Math.min(efforts.length - 1, Math.max(0, Math.round(Number(raw))));
-        setSpeed(speedForIndex(idx, efforts.length));
-        // 先钉住目标位置，宿主选区更新完成前不跟随，避免回弹卡顿。
-        // 记录提交前宿主是否已在目标位：是则下次轮到宿主值即视为已确认。
-        sync.submit(idx, modelKey, idx === committedIndex);
-        if (idx === committedIndex || pendingRef.current) return;
+        setPos(raw); // 位置保持用户松手处，速度即该位置的值
+        setSpeed(speedForRatio(max > 0 ? raw / max : 0));
+        if (!bindEffort) return; // 纯调速：无需提交档位
+        const region = regionOf(raw);
+        if (region === baseRegion || pendingRef.current) return;
+        sync.submit(region, modelKey, false);
         pendingRef.current = true;
         setPending(true);
         let accepted = false;
@@ -617,28 +632,26 @@ window.__ModuleLoader__.load({
           accepted = await select({
             provider: reasoning.selection.provider,
             model: reasoning.selection.model,
-            reasoningEffort: efforts[idx].id,
+            reasoningEffort: efforts[region].id,
           });
         } catch { accepted = false; }
         pendingRef.current = false;
         setPending(false);
         if (!accepted) {
-          // 宿主拒绝了这次选择：释放钉住，立刻回到真实档位
+          // 宿主拒绝：释放钉住，回到真实档位的区域中心
           sync.reset();
-          setSpeed(speedForIndex(Math.max(0, committedIndex), efforts.length));
+          setPos(null);
         }
       };
 
       const onInput = (event) => {
-        const next = Number(event.target.value);
-        setDragValue(next);
-        setSpeed(speedForRatio(max <= 0 ? 0 : next / max));
+        setDragValue(Number(event.target.value));
       };
 
-      const previewIndex = Math.min(max, Math.max(0, Math.round(value)));
       const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+      const region = regionOf(value);
       const label = bindEffort
-        ? (efforts[previewIndex]?.name ?? "")
+        ? (efforts[region]?.name ?? "")
         : speed.toFixed(2) + "\u00d7";
 
       return h(
@@ -649,7 +662,7 @@ window.__ModuleLoader__.load({
           "data-pending": pending ? "true" : undefined,
           title: bindEffort
             ? label + " · " + speed.toFixed(2) + "\u00d7"
-            : translate("slider.speedOnly"),
+            : translate("slider.speedOnly") + " · " + speed.toFixed(2) + "\u00d7",
           "data-dsh-kunkun": "effort-slider",
         },
         h(
@@ -665,11 +678,11 @@ window.__ModuleLoader__.load({
             "div",
             { className: "dsk-effort-ticks", "aria-hidden": "true" },
             bindEffort
-              ? efforts.map((effort, index) =>
+              ? Array.from({ length: regions - 1 }, (_, i) =>
                   h("i", {
-                    key: effort.id ?? String(index),
+                    key: "b" + i,
                     className: "dsk-effort-tick",
-                    style: { left: (index / max) * 100 + "%" },
+                    style: { left: ((i + 1) / regions) * 100 + "%" },
                   })
                 )
               : [
@@ -687,7 +700,7 @@ window.__ModuleLoader__.load({
             "aria-label": translate("slider.title"),
             "aria-valuemin": 0,
             "aria-valuemax": max,
-            "aria-valuenow": value,
+            "aria-valuenow": Number(value.toFixed(3)),
             onInput,
             onChange: onInput,
             onPointerUp: (event) => void commit(Number(event.target.value)),

@@ -33,11 +33,12 @@ A slider sits in the composer toolbar (**conversation.input.right**, next to the
 
 输入框工具排有一个滑块（模型选择器旁）：
 
-- **Drag** — the basketball animation speed follows the slider live (0.5×–2×, continuous).
+- **Drag** — the basketball animation speed follows the slider live and continuously (30%–300%, any value).
 - **Release** — the nearest reasoning-effort stop is committed through the official ModelDirectory (`session.selectModel`), exactly like the effort control of the host.
-- Stops come from the current model's `reasoning.efforts`. The slider **never hides**: when the model advertises ≥2 efforts it also commits the reasoning level; otherwise (third-party models without effort metadata, addressed subagent sessions, missing service) it degrades to a **speed-only** slider that still controls the animation.
+- The track is split into **N equal regions** (N = the current model's `reasoning.efforts` count). The knob can sit at **any** position — the region it lands in is the reasoning level, while the position itself sets the speed. Releasing commits that region's effort.
+- The slider **never hides**: when the model advertises ≥2 efforts it also commits the reasoning level; otherwise (third-party models without effort metadata, addressed subagent sessions, missing service) it degrades to a **speed-only** slider that still controls the animation.
 - If the model-directory service is unavailable the slider silently disappears — the rest of the skin keeps working.
-- **拖动**时篮球动图播放速度实时跟随（0.5×–2× 连续变速）；模型带 ≥2 个推理档位时，**松手**还会通过官方 ModelDirectory 提交最近的档位。第三方模型没有档位元数据时滑块自动降级为**纯调速**模式（仍然显示、仍然变速）。速度由 CSS `steps()` 精灵条驱动（`<img>` GIF 无法调速，所以内置动图改为逐帧精灵条）。设置面板底部有诊断框，滑块状态一目了然。
+- **拖动**时篮球动图播放速度实时跟随（30%–300%，任意值）；滑轨按模型档位数 N 均分为 **N 个区域**，旋钮落在哪个区域就是哪个推理等级，位置本身决定速度。模型带 ≥2 个推理档位时，**松手**会通过官方 ModelDirectory 提交所在区域的档位。第三方模型没有档位元数据时滑块自动降级为**纯调速**模式（仍然显示、仍然变速）。速度由 CSS `steps()` 精灵条驱动（`<img>` GIF 无法调速，所以内置动图改为逐帧精灵条）。设置面板底部有诊断框，滑块状态一目了然。
 
 ## Notes / 说明
 
