@@ -473,7 +473,7 @@ window.__ModuleLoader__.load({
     }
 
     /* ---------------- plugin ---------------- */
-    /* ---------------- effort slider (conversation.input.right) ----------------
+    /* ---------------- effort slider (conversation.input.left) ----------------
        One control, two effects: dragging previews the animation speed
        continuously; release commits the nearest reasoning effort through the
        official ModelDirectory. Degrades to a no-op whenever the model
@@ -724,7 +724,7 @@ window.__ModuleLoader__.load({
         };
         const guard = (where, fn) => () => {
           try { return fn(); } catch (err) {
-            if (where.startsWith("conversation.input.right")) {
+            if (where.startsWith("conversation.input.left")) {
               sliderDiag.registered = "error: " + String((err && err.message) || err);
             }
             diagnose(where)(err);
@@ -780,13 +780,13 @@ window.__ModuleLoader__.load({
 
         ctx.effect(
           () =>
-            guard("conversation.input.right", () =>
+            guard("conversation.input.left", () =>
               ctx.slots.inject(
-                "conversation.input.right",
-                guard("conversation.input.right:register", () => {
+                "conversation.input.left",
+                guard("conversation.input.left:register", () => {
                   const dispose = ctx.slots.register(
                     {
-                      name: "conversation.input.right",
+                      name: "conversation.input.left",
                       id: "kunkun-effort-slider",
                       order: 10,
                       label: () => translate("slider.title"),
@@ -800,7 +800,7 @@ window.__ModuleLoader__.load({
                 })
               )
             )(),
-          "dsh-kunkun: effort slider"
+          "dsh-kunkun: effort slider on composer left group"
         );
       },
     };
