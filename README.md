@@ -29,9 +29,9 @@ Two entries open the same panel: **Settings → Kunkun skin**, or the bundle's o
 
 ## Effort slider / 推理等级滑块
 
-A slider sits in the composer toolbar (**conversation.input.left**, on the left tool row — kept away from the right-anchored model seat so the reasoning-level text cannot shift it):
+A slider sits in the composer toolbar (**conversation.input.right**, next to the model selector):
 
-输入框工具排左侧有一个滑块（避开右对齐的模型选择器，推理等级文字变长也不会把它顶动）：
+输入框工具排有一个滑块（模型选择器旁）：
 
 - **Drag** — the basketball animation speed follows the slider live (0.5×–2×, continuous).
 - **Release** — the nearest reasoning-effort stop is committed through the official ModelDirectory (`session.selectModel`), exactly like the effort control of the host.

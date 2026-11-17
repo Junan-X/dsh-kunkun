@@ -304,20 +304,22 @@ window.__ModuleLoader__.load({
       .dsk-thumb.dsk-strip{width:auto;height:64px;border-radius:6px}
       /* LVGL 风格滑块：MAIN 轨道 + INDICATOR 填充 + KNOB 圆旋钮 */
       /* 固定宽度：档位名长短（低/高 vs Off/Low/High）不再撑动轨道位置 */
-      .dsk-effort{display:flex;flex-direction:column;align-items:center;gap:2px;width:132px;min-width:132px;max-width:132px;padding:0 4px;flex:none;box-sizing:border-box}
-      .dsk-effort-label{display:block;width:100%;text-align:center;font-size:11px;line-height:1.3;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .dsk-effort-rail{position:relative;width:100%;height:20px;display:flex;align-items:center}
+      /* 整体上移：轨道居中到同行控件文字的光学中线，标签浮在轨道上方不占布局高度 */
+      .dsk-effort{display:flex;flex-direction:column;align-items:center;width:132px;min-width:132px;max-width:132px;padding:0 4px;flex:none;box-sizing:border-box;align-self:center;transform:translateY(1px)}
+      .dsk-effort-label{position:absolute;bottom:100%;left:0;right:0;margin-bottom:-1px;text-align:center;font-size:10px;line-height:1;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+      .dsk-effort-rail-wrap{position:relative;width:100%;display:flex;align-items:center}
+      .dsk-effort-rail{position:relative;width:100%;height:16px;display:flex;align-items:center}
       .dsk-effort-track{position:absolute;left:0;right:0;top:50%;height:8px;transform:translateY(-50%);border-radius:999px;background:var(--dsw-alias-border-l1);overflow:hidden;pointer-events:none}
       .dsk-effort-fill{height:100%;border-radius:999px;background:var(--dsw-alias-brand-primary);transition:width 60ms linear}
       .dsk-effort-ticks{position:absolute;left:0;right:0;top:0;height:3px;pointer-events:none;opacity:.85}
       .dsk-effort-tick{position:absolute;top:0;width:2px;height:3px;border-radius:1px;background:var(--dsw-alias-border-l2);transform:translateX(-1px)}
-      .dsk-effort-range{position:relative;z-index:2;width:100%;height:20px;margin:0;background:transparent;cursor:pointer;-webkit-appearance:none;appearance:none;outline:none}
+      .dsk-effort-range{position:relative;z-index:2;width:100%;height:16px;margin:0;background:transparent;cursor:pointer;-webkit-appearance:none;appearance:none;outline:none}
       .dsk-effort-range::-webkit-slider-runnable-track{height:8px;background:transparent;border-radius:999px}
-      .dsk-effort-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;margin-top:-4px;border:0;border-radius:50%;background:var(--dsw-alias-brand-primary);box-shadow:0 1px 4px rgba(0,0,0,.28),0 0 0 2px var(--dsw-alias-bg-base);transition:box-shadow .15s}
+      .dsk-effort-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;margin-top:-3px;border:0;border-radius:50%;background:var(--dsw-alias-brand-primary);box-shadow:0 1px 4px rgba(0,0,0,.28),0 0 0 2px var(--dsw-alias-bg-base);transition:box-shadow .15s}
       .dsk-effort-range:active::-webkit-slider-thumb{box-shadow:0 1px 6px rgba(0,0,0,.35),0 0 0 5px color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent)}
       .dsk-effort-range:focus-visible::-webkit-slider-thumb{box-shadow:0 1px 4px rgba(0,0,0,.28),0 0 0 5px color-mix(in srgb,var(--dsw-alias-brand-primary) 30%,transparent)}
       .dsk-effort-range::-moz-range-track{height:8px;background:transparent;border:0}
-      .dsk-effort-range::-moz-range-thumb{width:16px;height:16px;border:0;border-radius:50%;background:var(--dsw-alias-brand-primary);box-shadow:0 1px 4px rgba(0,0,0,.28)}
+      .dsk-effort-range::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:var(--dsw-alias-brand-primary);box-shadow:0 1px 4px rgba(0,0,0,.28)}
       .dsk-effort[data-pending=true] .dsk-effort-label{opacity:.6}
       .dsk-diag{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border:1px dashed var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
       .dsk-diag strong{font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary)}
@@ -473,7 +475,7 @@ window.__ModuleLoader__.load({
     }
 
     /* ---------------- plugin ---------------- */
-    /* ---------------- effort slider (conversation.input.left) ----------------
+    /* ---------------- effort slider (conversation.input.right) ----------------
        One control, two effects: dragging previews the animation speed
        continuously; release commits the nearest reasoning effort through the
        official ModelDirectory. Degrades to a no-op whenever the model
@@ -650,10 +652,10 @@ window.__ModuleLoader__.load({
             : translate("slider.speedOnly"),
           "data-dsh-kunkun": "effort-slider",
         },
-        h("span", { className: "dsk-effort-label" }, label),
         h(
           "div",
           { className: "dsk-effort-rail" },
+          h("span", { className: "dsk-effort-label" }, label),
           h(
             "div",
             { className: "dsk-effort-track" },
@@ -724,7 +726,7 @@ window.__ModuleLoader__.load({
         };
         const guard = (where, fn) => () => {
           try { return fn(); } catch (err) {
-            if (where.startsWith("conversation.input.left")) {
+            if (where.startsWith("conversation.input.right")) {
               sliderDiag.registered = "error: " + String((err && err.message) || err);
             }
             diagnose(where)(err);
@@ -780,13 +782,13 @@ window.__ModuleLoader__.load({
 
         ctx.effect(
           () =>
-            guard("conversation.input.left", () =>
+            guard("conversation.input.right", () =>
               ctx.slots.inject(
-                "conversation.input.left",
-                guard("conversation.input.left:register", () => {
+                "conversation.input.right",
+                guard("conversation.input.right:register", () => {
                   const dispose = ctx.slots.register(
                     {
-                      name: "conversation.input.left",
+                      name: "conversation.input.right",
                       id: "kunkun-effort-slider",
                       order: 10,
                       label: () => translate("slider.title"),
@@ -800,7 +802,7 @@ window.__ModuleLoader__.load({
                 })
               )
             )(),
-          "dsh-kunkun: effort slider on composer left group"
+          "dsh-kunkun: effort slider on composer trailing group"
         );
       },
     };
