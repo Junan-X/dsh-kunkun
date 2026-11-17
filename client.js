@@ -477,6 +477,42 @@ window.__ModuleLoader__.load({
        continuously; release commits the nearest reasoning effort through the
        official ModelDirectory. Degrades to a no-op whenever the model
        directory service is unavailable — the skin never hard-depends on it. */
+    /* ---------------- 滑块提交同步器 ----------------
+       松手提交后宿主选区会异步更新，期间滑块会从"用户拖到的位置"跳回"旧档位"再
+       跳到"新档位"，表现为卡顿。这里记住本次提交的目标，在宿主确认前把位置钉在
+       提交值上；确认后释放。切换模型/模式时才完全跟随宿主。 */
+    function createEffortSync() {
+      let submitted = null;   // { value, modelKey, at }
+      let settled = false;    // 宿主已确认，下一帧释放
+      return {
+        /** 提交某档位：位置先钉住它 */
+        submit(value, modelKey, wasAtTarget) {
+          submitted = { value, modelKey, at: Date.now(), wasAtTarget: wasAtTarget === true };
+          settled = false;
+        },
+        /** 用户取消 / 提交失败：立刻释放，回到宿主真实档位 */
+        reset() { submitted = null; settled = false; },
+        /** 每次渲染调用：返回应当钉住的值，null 表示跟随宿主 */
+        hold(modelKey, committedValue) {
+          if (submitted === null) return null;
+          // 换了模型（provider/model/档位集合变化）→ 立即释放
+          if (submitted.modelKey !== modelKey) { submitted = null; settled = false; return null; }
+          // 超时保护：宿主 1.2s 内没响应也不再钉住，避免永久卡住
+          if (Date.now() - submitted.at > 1200) { submitted = null; settled = false; return null; }
+          // 只有"上一帧还不在目标位置、现在到了"才算宿主确认。
+          // 否则提交瞬间的陈旧快照（值恰好等于目标）会被误判为已到位。
+          const atTarget = Math.abs(committedValue - submitted.value) < 0.001;
+          if (atTarget && !submitted.wasAtTarget) {
+            submitted = null;
+            settled = true;
+            return null;
+          }
+          submitted.wasAtTarget = atTarget;
+          return submitted.value;
+        },
+      };
+    }
+
     const SUB = 10; // sub-stops per effort gap → continuous speed while dragging
     function ratioForSpeed(value) {
       const ratio = Math.log(value / SPEED_MIN) / Math.log(SPEED_MAX / SPEED_MIN);
@@ -501,10 +537,20 @@ window.__ModuleLoader__.load({
       const [dragValue, setDragValue] = React.useState(null);
       const [pending, setPending] = React.useState(false);
       const pendingRef = React.useRef(false);
+      const syncRef = React.useRef(null);
+      if (syncRef.current === null) syncRef.current = createEffortSync();
+      const sync = syncRef.current;
       const max = bindEffort ? Math.max(1, efforts.length - 1) : 1;
-      const committedValue = bindEffort
+      // 模型身份：provider/model/档位集合任一变化都要放弃"钉住"
+      const modelKey = reasoning
+        ? JSON.stringify([reasoning.selection.provider, reasoning.selection.model, efforts.map((e) => e.id)])
+        : "none";
+      const committedRaw = bindEffort
         ? Math.max(0, committedIndex)
         : ratioForSpeed(speed);
+      // 拖动中优先用拖动值；否则用提交同步器钉住的值；最后才跟随宿主
+      const held = dragValue === null ? sync.hold(modelKey, committedRaw) : null;
+      const committedValue = held === null ? committedRaw : held;
       const value = dragValue === null ? committedValue : dragValue;
 
       React.useEffect(() => {
@@ -514,7 +560,7 @@ window.__ModuleLoader__.load({
       // Only effort mode follows the host selection; speed-only keeps whatever
       // the user last dragged (the position derives from the speed store).
       React.useEffect(() => {
-        if (dragValue === null && bindEffort) {
+        if (dragValue === null && bindEffort && committedIndex >= 0) {
           setSpeed(speedForIndex(committedIndex, efforts.length));
         }
       }, [dragValue, bindEffort, committedIndex, efforts.length]);
@@ -551,9 +597,15 @@ window.__ModuleLoader__.load({
 
       const commit = async (raw) => {
         setDragValue(null);
-        if (!bindEffort) return; // position derives from the speed store
-        const idx = Math.min(efforts.length - 1, Math.max(0, Math.round(raw)));
+        if (!bindEffort) {
+          setSpeed(speedForRatio(max <= 0 ? 0 : Number(raw) / max));
+          return;
+        }
+        const idx = Math.min(efforts.length - 1, Math.max(0, Math.round(Number(raw))));
         setSpeed(speedForIndex(idx, efforts.length));
+        // 先钉住目标位置，宿主选区更新完成前不跟随，避免回弹卡顿。
+        // 记录提交前宿主是否已在目标位：是则下次轮到宿主值即视为已确认。
+        sync.submit(idx, modelKey, idx === committedIndex);
         if (idx === committedIndex || pendingRef.current) return;
         pendingRef.current = true;
         setPending(true);
@@ -568,7 +620,8 @@ window.__ModuleLoader__.load({
         pendingRef.current = false;
         setPending(false);
         if (!accepted) {
-          // Host rejected the selection — snap speed back to the real effort.
+          // 宿主拒绝了这次选择：释放钉住，立刻回到真实档位
+          sync.reset();
           setSpeed(speedForIndex(Math.max(0, committedIndex), efforts.length));
         }
       };
