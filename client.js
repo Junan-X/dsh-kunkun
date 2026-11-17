@@ -41,6 +41,7 @@ window.__ModuleLoader__.load({
       errorSize: "图片太大，请选择 5 MB 以内的文件。",
       errorGeneric: "无法读取这张图片，请换一张再试。",
       "slider.title": "推理等级",
+      "slider.speedOnly": "动图速度",
       "diag.title": "滑块诊断（反馈给作者）",
     };
     const en = {
@@ -63,6 +64,7 @@ window.__ModuleLoader__.load({
       errorSize: "Image is too large; pick a file under 5 MB.",
       errorGeneric: "Could not read this image, please try another one.",
       "slider.title": "Reasoning effort",
+      "slider.speedOnly": "Animation speed",
       "diag.title": "Slider diagnostics (for the author)",
     };
 
@@ -467,6 +469,10 @@ window.__ModuleLoader__.load({
        official ModelDirectory. Degrades to a no-op whenever the model
        directory service is unavailable — the skin never hard-depends on it. */
     const SUB = 10; // sub-stops per effort gap → continuous speed while dragging
+    function ratioForSpeed(value) {
+      const ratio = Math.log(value / SPEED_MIN) / Math.log(SPEED_MAX / SPEED_MIN);
+      return Math.min(1, Math.max(0, ratio));
+    }
     function EffortSlider(props) {
       const { available, directory, load, select } = props;
       const state = React.useSyncExternalStore(
@@ -479,56 +485,65 @@ window.__ModuleLoader__.load({
       const committedIndex = reasoning
         ? selectedEffortIndex(efforts, reasoning.selection.reasoningEffort, reasoning.defaultEffort)
         : -1;
+      // The slider never hides: with ≥2 efforts it also commits the reasoning
+      // level; otherwise it degrades to animation-speed control only (the
+      // reference skin hides itself on such models — we don't).
+      const bindEffort = available && reasoning !== null && efforts.length >= 2 && committedIndex >= 0;
       const [dragValue, setDragValue] = React.useState(null);
       const [pending, setPending] = React.useState(false);
       const pendingRef = React.useRef(false);
-      const max = Math.max(1, efforts.length - 1);
-      const committedValue = Math.max(0, committedIndex);
+      const max = bindEffort ? Math.max(1, efforts.length - 1) : 1;
+      const committedValue = bindEffort
+        ? Math.max(0, committedIndex)
+        : ratioForSpeed(speed);
       const value = dragValue === null ? committedValue : dragValue;
 
       React.useEffect(() => {
         if (available && directory) load();
       }, [available, directory, load]);
 
-      // Without a live drag, playback speed follows the committed effort.
+      // Only effort mode follows the host selection; speed-only keeps whatever
+      // the user last dragged (the position derives from the speed store).
       React.useEffect(() => {
-        if (dragValue === null && efforts.length >= 2 && committedIndex >= 0) {
+        if (dragValue === null && bindEffort) {
           setSpeed(speedForIndex(committedIndex, efforts.length));
         }
-      }, [dragValue, efforts.length, committedIndex]);
+      }, [dragValue, bindEffort, committedIndex, efforts.length]);
 
-      sliderDiag.render = reasoning
-        ? { outcome: "ready", efforts: efforts.length, current: reasoning.selection.reasoningEffort ?? reasoning.defaultEffort ?? null }
+      const mode = bindEffort ? "effort" : "speed-only";
+      const degradeReason = !available
+        ? "unavailable (no model directory or addressed subagent)"
+        : !reasoning
+          ? "no reasoning data"
+          : efforts.length < 2
+            ? "efforts<2 (" + efforts.length + ")"
+            : null;
+      sliderDiag.render = bindEffort
+        ? {
+            mode,
+            efforts: efforts.length,
+            current: reasoning.selection.reasoningEffort ?? reasoning.defaultEffort ?? null,
+          }
         : {
-            outcome: "hidden",
-            reason: !available
-              ? "unavailable"
-              : "no reasoning data",
+            mode,
+            reason: degradeReason ?? "n/a",
             snapshotKeys: state ? Object.keys(state) : String(state),
             current: state?.current ?? null,
             groups: state?.groups?.length ?? 0,
             efforts: efforts.length,
           };
-      if (!available || !reasoning || efforts.length < 2 || committedIndex < 0) {
-        if (!EffortSlider.hideLogged) {
-          EffortSlider.hideLogged = true;
-          const reason = !available
-            ? "unavailable (no model directory or addressed subagent)"
-            : !reasoning
-              ? "no reasoning data (current=" + JSON.stringify(state?.current ?? null) + " groups=" + (state?.groups?.length ?? 0) + ")"
-              : "efforts<2 (" + efforts.length + ")";
-          console.info("[dsh-kunkun] slider hidden: " + reason);
-        }
-        return null;
-      }
-      if (!EffortSlider.readyLogged) {
-        EffortSlider.readyLogged = true;
-        console.info("[dsh-kunkun] slider ready: " + efforts.length + " efforts, current=" + (reasoning.selection.reasoningEffort ?? reasoning.defaultEffort ?? "?"));
+      if (!EffortSlider.modeLogged) {
+        EffortSlider.modeLogged = true;
+        console.info(
+          "[dsh-kunkun] slider mode: " + mode +
+          (degradeReason ? " (" + degradeReason + ")" : " — " + efforts.length + " efforts")
+        );
       }
 
       const commit = async (raw) => {
-        const idx = Math.min(efforts.length - 1, Math.max(0, Math.round(raw)));
         setDragValue(null);
+        if (!bindEffort) return; // position derives from the speed store
+        const idx = Math.min(efforts.length - 1, Math.max(0, Math.round(raw)));
         setSpeed(speedForIndex(idx, efforts.length));
         if (idx === committedIndex || pendingRef.current) return;
         pendingRef.current = true;
@@ -555,31 +570,41 @@ window.__ModuleLoader__.load({
         setSpeed(speedForRatio(max <= 0 ? 0 : next / max));
       };
 
-      const previewIndex = Math.min(efforts.length - 1, Math.max(0, Math.round(value)));
-      const previewName = efforts[previewIndex]?.name ?? "";
+      const previewIndex = Math.min(max, Math.max(0, Math.round(value)));
+      const label = bindEffort
+        ? (efforts[previewIndex]?.name ?? "")
+        : speed.toFixed(2) + "\u00d7";
 
       return h(
         "div",
         {
           className: "dsk-effort",
+          "data-mode": mode,
           "data-pending": pending ? "true" : undefined,
-          title: previewName + " · " + speed.toFixed(2) + "\u00d7",
+          title: bindEffort
+            ? label + " · " + speed.toFixed(2) + "\u00d7"
+            : translate("slider.speedOnly"),
           "data-dsh-kunkun": "effort-slider",
         },
-        h("span", { className: "dsk-effort-label" }, previewName),
+        h("span", { className: "dsk-effort-label" }, label),
         h(
           "div",
           { className: "dsk-effort-rail" },
           h(
             "div",
             { className: "dsk-effort-ticks", "aria-hidden": "true" },
-            efforts.map((effort, index) =>
-              h("i", {
-                key: effort.id ?? String(index),
-                className: "dsk-effort-tick",
-                style: { left: max <= 0 ? "0%" : (index / max) * 100 + "%" },
-              })
-            )
+            bindEffort
+              ? efforts.map((effort, index) =>
+                  h("i", {
+                    key: effort.id ?? String(index),
+                    className: "dsk-effort-tick",
+                    style: { left: (index / max) * 100 + "%" },
+                  })
+                )
+              : [
+                  h("i", { key: "s0", className: "dsk-effort-tick", style: { left: "0%" } }),
+                  h("i", { key: "s1", className: "dsk-effort-tick", style: { left: "100%" } }),
+                ]
           ),
           h("input", {
             type: "range",
@@ -602,7 +627,7 @@ window.__ModuleLoader__.load({
     }
 
     return {
-      inject: ["slots", "locale"],
+      inject: ["slots", "sessions", "modelDirectories", "locale"],
       apply(ctx) {
         // One stylesheet for the whole skin: settings panel, sprite strip and
         // effort slider. Registered once, removed on dispose.
@@ -727,9 +752,10 @@ window.__ModuleLoader__.load({
         if (!service || typeof service.directoryFor !== "function") service = ctx.modelDirectories;
         if (!service || typeof service.directoryFor !== "function") {
           record({ service: false });
+          record({ directory: false, addressed: null });
           if (!resolveSliderProps.logged) {
             resolveSliderProps.logged = true;
-            console.warn("[dsh-kunkun] slider hidden: modelDirectories service not resolvable via ctx.get/ctx.modelDirectories");
+            console.warn("[dsh-kunkun] effort mode disabled: modelDirectories service not resolvable");
           }
           return empty;
         }

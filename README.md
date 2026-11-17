@@ -35,9 +35,9 @@ A slider sits in the composer toolbar (**conversation.input.right**, next to the
 
 - **Drag** — the basketball animation speed follows the slider live (0.5×–2×, continuous).
 - **Release** — the nearest reasoning-effort stop is committed through the official ModelDirectory (`session.selectModel`), exactly like the effort control of the host.
-- Stops come from the current model's `reasoning.efforts`; models without ≥2 efforts (and addressed subagent sessions) hide the slider.
+- Stops come from the current model's `reasoning.efforts`. The slider **never hides**: when the model advertises ≥2 efforts it also commits the reasoning level; otherwise (third-party models without effort metadata, addressed subagent sessions, missing service) it degrades to a **speed-only** slider that still controls the animation.
 - If the model-directory service is unavailable the slider silently disappears — the rest of the skin keeps working.
-- **拖动**时篮球动图播放速度实时跟随（0.5×–2× 连续变速）；**松手**时通过官方 ModelDirectory 提交最近的推理等级档位。档位读自当前模型 `reasoning.efforts`；不支持推理或只有 1 档的模型、以及子代理会话不显示滑块。速度由 CSS `steps()` 精灵条驱动（`<img>` GIF 无法调速，所以内置动图改为逐帧精灵条）。
+- **拖动**时篮球动图播放速度实时跟随（0.5×–2× 连续变速）；模型带 ≥2 个推理档位时，**松手**还会通过官方 ModelDirectory 提交最近的档位。第三方模型没有档位元数据时滑块自动降级为**纯调速**模式（仍然显示、仍然变速）。速度由 CSS `steps()` 精灵条驱动（`<img>` GIF 无法调速，所以内置动图改为逐帧精灵条）。设置面板底部有诊断框，滑块状态一目了然。
 
 ## Notes / 说明
 
