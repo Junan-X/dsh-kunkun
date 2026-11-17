@@ -303,8 +303,9 @@ window.__ModuleLoader__.load({
       @keyframes dsk-strip-play{from{transform:translateX(0)}to{transform:translateX(-100%)}}
       .dsk-thumb.dsk-strip{width:auto;height:64px;border-radius:6px}
       /* LVGL 风格滑块：MAIN 轨道 + INDICATOR 填充 + KNOB 圆旋钮 */
-      .dsk-effort{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:120px;max-width:168px;padding:0 4px;flex:none}
-      .dsk-effort-label{font-size:11px;line-height:1.3;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+      /* 固定宽度：档位名长短（低/高 vs Off/Low/High）不再撑动轨道位置 */
+      .dsk-effort{display:flex;flex-direction:column;align-items:center;gap:2px;width:132px;min-width:132px;max-width:132px;padding:0 4px;flex:none;box-sizing:border-box}
+      .dsk-effort-label{display:block;width:100%;text-align:center;font-size:11px;line-height:1.3;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .dsk-effort-rail{position:relative;width:100%;height:20px;display:flex;align-items:center}
       .dsk-effort-track{position:absolute;left:0;right:0;top:50%;height:8px;transform:translateY(-50%);border-radius:999px;background:var(--dsw-alias-border-l1);overflow:hidden;pointer-events:none}
       .dsk-effort-fill{height:100%;border-radius:999px;background:var(--dsw-alias-brand-primary);transition:width 60ms linear}
