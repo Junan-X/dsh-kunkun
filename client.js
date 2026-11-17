@@ -302,12 +302,21 @@ window.__ModuleLoader__.load({
         animation:dsk-strip-play var(--dsk-strip-dur,3400ms) steps(17) infinite;will-change:transform}
       @keyframes dsk-strip-play{from{transform:translateX(0)}to{transform:translateX(-100%)}}
       .dsk-thumb.dsk-strip{width:auto;height:64px;border-radius:6px}
-      .dsk-effort{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:120px;max-width:168px;padding:0 4px;flex:none}
+      /* LVGL 风格滑块：MAIN 轨道 + INDICATOR 填充 + KNOB 圆旋钮 */
+      .dsk-effort{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:120px;max-width:168px;padding:0 4px;flex:none}
       .dsk-effort-label{font-size:11px;line-height:1.3;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-      .dsk-effort-rail{position:relative;width:100%;display:flex;align-items:center;height:18px}
-      .dsk-effort-ticks{position:absolute;left:0;right:0;top:50%;height:6px;transform:translateY(-50%);pointer-events:none}
-      .dsk-effort-tick{position:absolute;top:0;width:2px;height:6px;border-radius:1px;background:var(--dsw-alias-border-l2);transform:translateX(-1px)}
-      .dsk-effort input[type=range]{position:relative;width:100%;margin:0;accent-color:var(--dsw-alias-brand-primary);background:transparent;cursor:pointer}
+      .dsk-effort-rail{position:relative;width:100%;height:20px;display:flex;align-items:center}
+      .dsk-effort-track{position:absolute;left:0;right:0;top:50%;height:8px;transform:translateY(-50%);border-radius:999px;background:var(--dsw-alias-border-l1);overflow:hidden;pointer-events:none}
+      .dsk-effort-fill{height:100%;border-radius:999px;background:var(--dsw-alias-brand-primary);transition:width 60ms linear}
+      .dsk-effort-ticks{position:absolute;left:0;right:0;top:0;height:3px;pointer-events:none;opacity:.85}
+      .dsk-effort-tick{position:absolute;top:0;width:2px;height:3px;border-radius:1px;background:var(--dsw-alias-border-l2);transform:translateX(-1px)}
+      .dsk-effort-range{position:relative;z-index:2;width:100%;height:20px;margin:0;background:transparent;cursor:pointer;-webkit-appearance:none;appearance:none;outline:none}
+      .dsk-effort-range::-webkit-slider-runnable-track{height:8px;background:transparent;border-radius:999px}
+      .dsk-effort-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;margin-top:-4px;border:0;border-radius:50%;background:var(--dsw-alias-brand-primary);box-shadow:0 1px 4px rgba(0,0,0,.28),0 0 0 2px var(--dsw-alias-bg-base);transition:box-shadow .15s}
+      .dsk-effort-range:active::-webkit-slider-thumb{box-shadow:0 1px 6px rgba(0,0,0,.35),0 0 0 5px color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent)}
+      .dsk-effort-range:focus-visible::-webkit-slider-thumb{box-shadow:0 1px 4px rgba(0,0,0,.28),0 0 0 5px color-mix(in srgb,var(--dsw-alias-brand-primary) 30%,transparent)}
+      .dsk-effort-range::-moz-range-track{height:8px;background:transparent;border:0}
+      .dsk-effort-range::-moz-range-thumb{width:16px;height:16px;border:0;border-radius:50%;background:var(--dsw-alias-brand-primary);box-shadow:0 1px 4px rgba(0,0,0,.28)}
       .dsk-effort[data-pending=true] .dsk-effort-label{opacity:.6}
       .dsk-diag{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border:1px dashed var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
       .dsk-diag strong{font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary)}
@@ -571,6 +580,7 @@ window.__ModuleLoader__.load({
       };
 
       const previewIndex = Math.min(max, Math.max(0, Math.round(value)));
+      const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
       const label = bindEffort
         ? (efforts[previewIndex]?.name ?? "")
         : speed.toFixed(2) + "\u00d7";
@@ -592,6 +602,11 @@ window.__ModuleLoader__.load({
           { className: "dsk-effort-rail" },
           h(
             "div",
+            { className: "dsk-effort-track" },
+            h("div", { className: "dsk-effort-fill", style: { width: pct + "%" } })
+          ),
+          h(
+            "div",
             { className: "dsk-effort-ticks", "aria-hidden": "true" },
             bindEffort
               ? efforts.map((effort, index) =>
@@ -607,6 +622,7 @@ window.__ModuleLoader__.load({
                 ]
           ),
           h("input", {
+            className: "dsk-effort-range",
             type: "range",
             min: 0,
             max,
