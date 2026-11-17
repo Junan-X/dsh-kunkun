@@ -41,6 +41,7 @@ window.__ModuleLoader__.load({
       errorSize: "图片太大，请选择 5 MB 以内的文件。",
       errorGeneric: "无法读取这张图片，请换一张再试。",
       "slider.title": "推理等级",
+      "diag.title": "滑块诊断（反馈给作者）",
     };
     const en = {
       nav: "Kunkun skin",
@@ -62,6 +63,7 @@ window.__ModuleLoader__.load({
       errorSize: "Image is too large; pick a file under 5 MB.",
       errorGeneric: "Could not read this image, please try another one.",
       "slider.title": "Reasoning effort",
+      "diag.title": "Slider diagnostics (for the author)",
     };
 
     let translate = (key) => zh[key] ?? en[key] ?? key;
@@ -91,6 +93,15 @@ window.__ModuleLoader__.load({
       }, []);
       return [value, setState];
     }
+
+    /* ---------------- slider diagnostics (visible in Settings) ---------------- */
+    const sliderDiag = {
+      registered: "pending",
+      props: null,
+      render: null,
+      react: typeof React.useSyncExternalStore === "function" ? "ok" : "MISSING useSyncExternalStore",
+    };
+    if (typeof window !== "undefined") window.__dshkunkunSliderDiag = sliderDiag;
 
     /* ---------------- animation speed store ---------------- */
     // The effort slider drives playback speed live while dragging; the mascot
@@ -296,6 +307,9 @@ window.__ModuleLoader__.load({
       .dsk-effort-tick{position:absolute;top:0;width:2px;height:6px;border-radius:1px;background:var(--dsw-alias-border-l2);transform:translateX(-1px)}
       .dsk-effort input[type=range]{position:relative;width:100%;margin:0;accent-color:var(--dsw-alias-brand-primary);background:transparent;cursor:pointer}
       .dsk-effort[data-pending=true] .dsk-effort-label{opacity:.6}
+      .dsk-diag{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border:1px dashed var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
+      .dsk-diag strong{font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary)}
+      .dsk-diag code{font-size:10px;line-height:1.5;color:var(--dsw-alias-label-secondary);word-break:break-all;white-space:pre-wrap}
     `;
 
     function SettingsPanel() {
@@ -428,6 +442,20 @@ window.__ModuleLoader__.load({
             },
             busy ? translate("busy") : message
           )
+        ),
+
+        h(
+          "div",
+          { className: "dsk-diag", "data-dsh-kunkun": "diag" },
+          h("strong", null, translate("diag.title")),
+          h(
+            "code",
+            null,
+            "react=" + sliderDiag.react +
+              " | registered=" + sliderDiag.registered +
+              " | props=" + JSON.stringify(sliderDiag.props) +
+              " | render=" + JSON.stringify(sliderDiag.render)
+          )
         )
       );
     }
@@ -469,6 +497,18 @@ window.__ModuleLoader__.load({
         }
       }, [dragValue, efforts.length, committedIndex]);
 
+      sliderDiag.render = reasoning
+        ? { outcome: "ready", efforts: efforts.length, current: reasoning.selection.reasoningEffort ?? reasoning.defaultEffort ?? null }
+        : {
+            outcome: "hidden",
+            reason: !available
+              ? "unavailable"
+              : "no reasoning data",
+            snapshotKeys: state ? Object.keys(state) : String(state),
+            current: state?.current ?? null,
+            groups: state?.groups?.length ?? 0,
+            efforts: efforts.length,
+          };
       if (!available || !reasoning || efforts.length < 2 || committedIndex < 0) {
         if (!EffortSlider.hideLogged) {
           EffortSlider.hideLogged = true;
@@ -588,7 +628,12 @@ window.__ModuleLoader__.load({
           console.error("[dsh-kunkun] " + where + " registration failed:", err);
         };
         const guard = (where, fn) => () => {
-          try { return fn(); } catch (err) { diagnose(where)(err); }
+          try { return fn(); } catch (err) {
+            if (where.startsWith("conversation.input.right")) {
+              sliderDiag.registered = "error: " + String((err && err.message) || err);
+            }
+            diagnose(where)(err);
+          }
         };
 
         ctx.effect(
@@ -640,22 +685,26 @@ window.__ModuleLoader__.load({
 
         ctx.effect(
           () =>
-            ctx.slots.inject(
-              "conversation.input.right",
-              guard("conversation.input.right", () =>
-                ctx.slots.register(
-                  {
-                    name: "conversation.input.right",
-                    id: "kunkun-effort-slider",
-                    order: 10,
-                    label: () => translate("slider.title"),
-                    // Session scope: the renderer passes sessionId first.
-                    inject: (sessionId) => resolveSliderProps(ctx, sessionId),
-                  },
-                  EffortSlider
-                )
+            guard("conversation.input.right", () =>
+              ctx.slots.inject(
+                "conversation.input.right",
+                guard("conversation.input.right:register", () => {
+                  const dispose = ctx.slots.register(
+                    {
+                      name: "conversation.input.right",
+                      id: "kunkun-effort-slider",
+                      order: 10,
+                      label: () => translate("slider.title"),
+                      // Session scope: the renderer passes sessionId first.
+                      inject: (sessionId) => resolveSliderProps(ctx, sessionId),
+                    },
+                    EffortSlider
+                  );
+                  sliderDiag.registered = "ok";
+                  return dispose;
+                })
               )
-            ),
+            )(),
           "dsh-kunkun: effort slider"
         );
       },
@@ -665,6 +714,7 @@ window.__ModuleLoader__.load({
        any failure degrades to { available: false } → the slider renders null
        while the rest of the skin keeps working. */
     function resolveSliderProps(ctx, sessionId) {
+      const record = (patch) => { sliderDiag.props = { ...(sliderDiag.props ?? {}), sessionId: String(sessionId), ...patch }; };
       const empty = {
         available: false,
         directory: null,
@@ -676,18 +726,21 @@ window.__ModuleLoader__.load({
         try { service = typeof ctx.get === "function" ? ctx.get("modelDirectories") : undefined; } catch { service = undefined; }
         if (!service || typeof service.directoryFor !== "function") service = ctx.modelDirectories;
         if (!service || typeof service.directoryFor !== "function") {
+          record({ service: false });
           if (!resolveSliderProps.logged) {
             resolveSliderProps.logged = true;
             console.warn("[dsh-kunkun] slider hidden: modelDirectories service not resolvable via ctx.get/ctx.modelDirectories");
           }
           return empty;
         }
+        record({ service: true });
         const sessions = ctx.sessions;
         const addressed =
           typeof sessions?.subagentAddress === "function"
             ? sessions.subagentAddress(sessionId)
             : undefined;
         const directory = service.directoryFor(sessionId);
+        record({ directory: !!(directory && directory.store), addressed: addressed !== undefined });
         if (!directory || !directory.store) {
           if (!resolveSliderProps.logged) {
             resolveSliderProps.logged = true;
@@ -709,6 +762,7 @@ window.__ModuleLoader__.load({
           },
         };
       } catch (err) {
+        record({ error: String(err && err.message || err) });
         console.error("[dsh-kunkun] effort slider props failed:", err);
         return empty;
       }
