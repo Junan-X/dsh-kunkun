@@ -26,6 +26,7 @@ Two entries open the same panel: **Settings → Kunkun skin**, or the bundle's o
 | --- | --- | --- |
 | Show mascot / 显示坤坤立绘 | on | Off hides the mascot; the settings entry stays available. |
 | Mascot image / 立绘样式 | basketball animation | Switch between the still Kunkun, the basketball animation, and an uploaded custom image (GIF/WebP/PNG/JPEG, ≤ 5 MB, stored in IndexedDB). |
+| Mascot placement / 动图位置 | bottom-right corner | `Bottom-right` shows the small mascot in the corner; `Full background` renders it as a slightly translucent layer behind the whole interface, fading out from right to left. |
 
 ## Effort slider / 推理等级滑块
 

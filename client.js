@@ -42,6 +42,10 @@ window.__ModuleLoader__.load({
       errorGeneric: "无法读取这张图片，请换一张再试。",
       "slider.title": "推理等级",
       "slider.speedOnly": "动图速度",
+      placement: "动图位置",
+      placementHint: "右下角显示小立绘，或铺在整个界面背景（稍微透明，从右到左渐隐）。",
+      placementCorner: "右下角",
+      placementStage: "全屏背景",
       "diag.title": "滑块诊断（反馈给作者）",
     };
     const en = {
@@ -65,19 +69,25 @@ window.__ModuleLoader__.load({
       errorGeneric: "Could not read this image, please try another one.",
       "slider.title": "Reasoning effort",
       "slider.speedOnly": "Animation speed",
+      placement: "Mascot placement",
+      placementHint: "A small mascot at the bottom-right corner, or a slightly translucent layer across the whole app background that fades out from right to left.",
+      placementCorner: "Bottom-right",
+      placementStage: "Full background",
       "diag.title": "Slider diagnostics (for the author)",
     };
 
     let translate = (key) => zh[key] ?? en[key] ?? key;
 
     /* ---------------- settings store ---------------- */
-    const defaults = { enabled: true, variant: "gif" };
+    const defaults = { enabled: true, variant: "gif", placement: "corner" };
+    const PLACEMENTS = ["corner", "stage"];
     let state = { ...defaults };
     try {
       const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null");
       if (saved && typeof saved === "object") state = { ...defaults, ...saved };
     } catch {}
     if (!["static", "gif", "custom"].includes(state.variant)) state.variant = defaults.variant;
+    if (!PLACEMENTS.includes(state.placement)) state.placement = defaults.placement;
     const listeners = new Set();
     function setState(patch) {
       state = { ...state, ...patch };
@@ -215,11 +225,174 @@ window.__ModuleLoader__.load({
     }
 
     /* ---------------- overlay mascot ---------------- */
+    /* 全屏背景层：参照 dsh-liang-skin 的做法插入主对话列内部（而不是 body），
+       既能让列的不透明底色之上显示图片，也不会把 body 的直接子节点变成
+       -webkit-app-region:no-drag（那会破坏双击标题栏最大化/选字）。 */
+    const STAGE_HOST_SELECTORS = ['[class*="centerCol"]', '[data-pane="conversation"]'];
+
+    function findStageHost() {
+      if (typeof document === "undefined") return null;
+      for (const selector of STAGE_HOST_SELECTORS) {
+        const host = document.querySelector(selector);
+        if (host) return host;
+      }
+      return null;
+    }
+
+    function useStageLayer(active, speed, variant, customUrl) {
+      const config = React.useRef({ speed, variant, customUrl });
+      config.current = { speed, variant, customUrl };
+      const dom = React.useRef(null);
+
+      const paint = () => {
+        const current = dom.current;
+        if (!current) return;
+        const conf = config.current;
+        const strip = conf.variant === "gif";
+        const image = strip
+          ? STRIP_SRC
+          : conf.variant === "custom"
+            ? (conf.customUrl || STATIC_SRC)
+            : STATIC_SRC;
+        const fit = current.fit;
+        fit.dataset.strip = strip ? "true" : "false";
+        fit.style.backgroundImage = 'url("' + image + '")';
+        fit.style.backgroundPosition = strip ? "0% 50%" : "center";
+        fit.style.backgroundSize = strip ? "1700% 100%" : "contain";
+        fit.style.setProperty("--dsk-strip-dur", STRIP_CYCLE_MS / conf.speed + "ms");
+      };
+
+      React.useEffect(() => {
+        if (!active || typeof document === "undefined") return undefined;
+        let layer = null;
+        let host = null;
+        let hostBefore = null;
+        let observer = null;
+        let lastScan = 0;
+        const cleared = [];
+
+        // 颜色透明度：用于判断哪个容器是不透明的“会话根”
+        const alphaOf = (color) => {
+          if (!color) return 0;
+          if (color === "transparent") return 0;
+          const rgba = color.match(/rgba?\(([^)]+)\)/);
+          if (rgba) {
+            const parts = rgba[1].split(/[,\/]/).map((part) => part.trim());
+            return parts.length >= 4 ? Number(parts[3]) : 1;
+          }
+          const slash = color.match(/\/\s*([\d.]+)\s*\)/);
+          if (slash) return Number(slash[1]);
+          return 1;
+        };
+
+        const restoreCleared = () => {
+          for (const item of cleared) {
+            try { item.el.style.background = item.background; } catch { /* ignore */ }
+          }
+          cleared.length = 0;
+        };
+
+        // 会话视图的根容器有不透明底色，会把 z-index:-1 的背景层挡住。
+        // 找出列内“覆盖大半列且底色不透明”的容器，临时改为透明（保留原值以便还原）。
+        const ensureTransparent = () => {
+          if (!host || typeof window === "undefined" || !window.getComputedStyle) return;
+          for (let i = cleared.length - 1; i >= 0; i -= 1) {
+            if (!cleared[i].el.isConnected) cleared.splice(i, 1);
+          }
+          if (cleared.length > 0) return;
+          let rect;
+          try { rect = host.getBoundingClientRect(); } catch { return; }
+          if (!rect || !rect.width) return;
+          const queue = [host];
+          let found = null;
+          while (queue.length > 0 && found === null) {
+            const node = queue.shift();
+            const children = Array.from(node.children || []);
+            for (const child of children) {
+              if (child === layer || (layer && layer.contains(child))) continue;
+              let box;
+              try { box = child.getBoundingClientRect(); } catch { continue; }
+              if (!box) continue;
+              if (box.width < rect.width * 0.8 || box.height < rect.height * 0.4) {
+                queue.push(child);
+                continue;
+              }
+              let background = "";
+              try { background = window.getComputedStyle(child).backgroundColor || ""; } catch { /* ignore */ }
+              if (alphaOf(background) > 0.05) { found = child; break; }
+              queue.push(child);
+            }
+          }
+          if (found !== null) {
+            cleared.push({ el: found, background: found.style.background });
+            found.style.background = "transparent";
+          }
+        };
+
+        const mount = () => {
+          if (layer && layer.isConnected) return;
+          const column = findStageHost();
+          if (!column) return;
+          if (!layer) {
+            host = column;
+            hostBefore = { position: column.style.position, isolation: column.style.isolation };
+            // 给列一个包含块与独立层叠上下文：背景层才能落在列背景之上、内容之下
+            let computedPosition = "static";
+            try { computedPosition = window.getComputedStyle(column).position; } catch {}
+            if (computedPosition === "static") column.style.position = "relative";
+            column.style.isolation = "isolate";
+            layer = document.createElement("div");
+            layer.className = "dsk-stage";
+            layer.setAttribute("aria-hidden", "true");
+            layer.setAttribute("data-dsh-kunkun", "stage");
+            const fit = document.createElement("div");
+            fit.className = "dsk-stage-fit";
+            layer.appendChild(fit);
+            dom.current = { layer, fit };
+            paint();
+          }
+          column.insertBefore(layer, column.firstChild);
+        };
+
+        mount();
+        ensureTransparent();
+        // React 重渲染可能移除外部插入的节点，按参考项目的做法观察并重挂；
+        // 视图切换（会话/插件页）后重新扫描需要透明化的根容器（节流）。
+        observer = new MutationObserver(() => {
+          if (!layer || !layer.isConnected) mount();
+          const now = Date.now();
+          if (now - lastScan > 400) {
+            lastScan = now;
+            ensureTransparent();
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        return () => {
+          if (observer) observer.disconnect();
+          if (layer) layer.remove();
+          restoreCleared();
+          if (host && hostBefore) {
+            host.style.position = hostBefore.position;
+            host.style.isolation = hostBefore.isolation;
+          }
+          dom.current = null;
+        };
+      }, [active]);
+
+      React.useEffect(() => {
+        if (active) paint();
+      }, [active, variant, customUrl, speed]);
+    }
+
     function Mascot() {
       const [s] = useSettings();
       const customUrlNow = useCustomImage();
       const speed = useSpeed();
+      const stage = s.enabled && s.placement === "stage";
+      useStageLayer(stage, speed, s.variant, customUrlNow);
       if (!s.enabled) return null;
+      if (stage) return null; // 背景模式下不再显示右下角立绘
       const wrapper = {
         "data-dsh-kunkun": "mascot",
         "aria-hidden": "true",
@@ -237,7 +410,7 @@ window.__ModuleLoader__.load({
         },
       };
       if (s.variant === "gif") {
-        // Sprite strip: speed is just animation-duration (0.5×–2× from the slider).
+        // Sprite strip: speed is just animation-duration (30%–300% from the slider).
         return h(
           "div",
           wrapper,
@@ -318,6 +491,20 @@ window.__ModuleLoader__.load({
       .dsk-effort-range::-moz-range-track{height:8px;background:transparent;border:0}
       .dsk-effort-range::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:var(--dsw-alias-brand-primary);box-shadow:0 1px 4px rgba(0,0,0,.28)}
       .dsk-effort[data-pending=true] .dsk-effort-label{opacity:.6}
+      .dsk-seg{display:inline-flex;gap:4px;padding:3px;border-radius:10px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1)}
+      .dsk-seg-btn{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font-size:12px;padding:5px 12px;border-radius:8px;cursor:pointer;transition:background .15s,color .15s}
+      .dsk-seg-btn[aria-pressed="true"]{background:var(--dsw-alias-brand-primary);color:#fff}
+      /* 全屏背景模式：插入主对话列内部（不挂 body，避免破坏窗口拖拽区）。
+         列设为 isolation 后，z-index:-1 位于列背景之上、对话内容之下。 */
+      .dsk-stage{position:absolute;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
+      .dsk-stage-fit{position:absolute;right:0;top:50%;transform:translateY(-50%);
+        height:92%;aspect-ratio:180/210;background-repeat:no-repeat;background-position:0% 50%;
+        background-size:contain;opacity:.5;
+        -webkit-mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.25) 20%,rgba(0,0,0,.7) 46%,#000 76%);
+        mask-image:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.25) 20%,rgba(0,0,0,.7) 46%,#000 76%)}
+      .dsk-stage-fit[data-strip="true"]{background-size:1700% 100%;
+        animation:dsk-stage-play var(--dsk-strip-dur,3400ms) steps(17,jump-none) infinite}
+      @keyframes dsk-stage-play{from{background-position:0% 50%}to{background-position:100% 50%}}
       .dsk-diag{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border:1px dashed var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
       .dsk-diag strong{font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary)}
       .dsk-diag code{font-size:10px;line-height:1.5;color:var(--dsw-alias-label-secondary);word-break:break-all;white-space:pre-wrap}
@@ -415,6 +602,30 @@ window.__ModuleLoader__.load({
             choice("static", translate("static"), STATIC_SRC),
             choice("gif", translate("gif"), "strip"),
             choice("custom", translate("custom"), customUrlNow || STATIC_SRC)
+          )
+        ),
+
+        h(
+          "div",
+          null,
+          h("div", { className: "dsk-label" }, translate("placement")),
+          h("div", { className: "dsk-hint" }, translate("placementHint")),
+          h(
+            "div",
+            { className: "dsk-seg" },
+            ["corner", "stage"].map((value) =>
+              h(
+                "button",
+                {
+                  key: value,
+                  type: "button",
+                  className: "dsk-seg-btn",
+                  "aria-pressed": s.placement === value,
+                  onClick: () => set({ placement: value }),
+                },
+                translate(value === "corner" ? "placementCorner" : "placementStage")
+              )
+            )
           )
         ),
 
