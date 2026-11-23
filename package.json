@@ -1,6 +1,6 @@
 {
   "name": "dsh-kunkun",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Kunkun skin for DeepSeek Harness: a fixed corner mascot over the shell. / 坤坤皮肤：在界面右下角固定显示坤坤立绘的 DSH 外观插件。",
   "license": "MIT",
   "type": "module",

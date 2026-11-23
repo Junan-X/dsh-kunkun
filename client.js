@@ -55,6 +55,14 @@ window.__ModuleLoader__.load({
       placementHint: "右下角显示小立绘，或铺在整个界面背景（稍微透明，从右到左渐隐）。",
       placementCorner: "右下角",
       placementStage: "全屏背景",
+      speedRange: "速度范围",
+      speedRangeHint: "滑到最左 / 最右对应的播放速度，可设 10%–1000%，最慢必须小于最快。",
+      speedRangeSlow: "最慢",
+      speedRangeFast: "最快",
+      speedRangeNow: "当前",
+      speedRangeInvalid: "范围不合法：需在 10%–1000% 之间，且最慢小于最快。",
+      speedRangeDone: "速度范围已更新",
+      speedRangeDefault: "恢复默认",
       "diag.title": "滑块诊断（反馈给作者）",
     };
     const en = {
@@ -82,13 +90,57 @@ window.__ModuleLoader__.load({
       placementHint: "A small mascot at the bottom-right corner, or a slightly translucent layer across the whole app background that fades out from right to left.",
       placementCorner: "Bottom-right",
       placementStage: "Full background",
+      speedRange: "Speed range",
+      speedRangeHint: "Playback speed at the far left and far right of the slider. Allowed 10%–1000%; the slow end must stay below the fast end.",
+      speedRangeSlow: "Slowest",
+      speedRangeFast: "Fastest",
+      speedRangeNow: "Now",
+      speedRangeInvalid: "Invalid range: keep it within 10%–1000% with the slow end below the fast end.",
+      speedRangeDone: "Speed range updated",
+      speedRangeDefault: "Defaults",
       "diag.title": "Slider diagnostics (for the author)",
     };
 
     let translate = (key) => zh[key] ?? en[key] ?? key;
 
+    /* ---------------- speed range limits ----------------
+       播放速度上限与下限是硬限制：再小动图几乎静止（10%），再大就是糊影（1000%）。
+       用户可在设置里把「滑到最左 / 最右」对应的速度改成范围内任意值。 */
+    const SPEED_FLOOR = 0.1;
+    const SPEED_CEIL = 10;
+    const SPEED_GAP = 1.2; // 最快至少是最慢的 1.2 倍，避免滑轨退化成一个点
+    const SPEED_DEFAULTS = { min: 0.3, max: 3 };
+
+    function roundSpeed(value) {
+      return Math.round(value * 100) / 100;
+    }
+    function clampSpeedRangeValue(value, fallback) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return fallback;
+      return Math.min(SPEED_CEIL, Math.max(SPEED_FLOOR, number));
+    }
+    /* 归一化用户输入的速度范围：夹到硬限制内，并保证 max ≥ min × SPEED_GAP。 */
+    function normalizeSpeedRange(min, max) {
+      let lo = clampSpeedRangeValue(min, SPEED_DEFAULTS.min);
+      let hi = clampSpeedRangeValue(max, SPEED_DEFAULTS.max);
+      if (!(hi >= lo * SPEED_GAP)) {
+        hi = lo * SPEED_GAP;
+        if (hi > SPEED_CEIL) {
+          hi = SPEED_CEIL;
+          lo = hi / SPEED_GAP;
+        }
+      }
+      return { min: roundSpeed(lo), max: roundSpeed(hi) };
+    }
+
     /* ---------------- settings store ---------------- */
-    const defaults = { enabled: true, variant: "anim:" + FALLBACK_ANIMATION.id, placement: "corner" };
+    const defaults = {
+      enabled: true,
+      variant: "anim:" + FALLBACK_ANIMATION.id,
+      placement: "corner",
+      speedMin: SPEED_DEFAULTS.min,
+      speedMax: SPEED_DEFAULTS.max,
+    };
     const PLACEMENTS = ["corner", "stage"];
     const isAnimationVariant = (value) => typeof value === "string" && value.startsWith("anim:");
     let state = { ...defaults };
@@ -101,9 +153,23 @@ window.__ModuleLoader__.load({
       state.variant = defaults.variant;
     }
     if (!PLACEMENTS.includes(state.placement)) state.placement = defaults.placement;
+    const savedRange = normalizeSpeedRange(state.speedMin, state.speedMax);
+    state.speedMin = savedRange.min;
+    state.speedMax = savedRange.max;
     const listeners = new Set();
     function setState(patch) {
       state = { ...state, ...patch };
+      if ("speedMin" in patch || "speedMax" in patch) {
+        const range = normalizeSpeedRange(state.speedMin, state.speedMax);
+        state.speedMin = range.min;
+        state.speedMax = range.max;
+        // 新范围可能不包含当前速度：拉回范围内并通知订阅者，避免动图停在旧速度
+        const clamped = Math.min(range.max, Math.max(range.min, speedState));
+        if (Math.abs(clamped - speedState) > 1e-6) {
+          speedState = clamped;
+          for (const fn of speedListeners) fn();
+        }
+      }
       try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(state)); } catch {}
       for (const fn of listeners) fn();
     }
@@ -130,17 +196,29 @@ window.__ModuleLoader__.load({
 
     /* ---------------- animation speed store ---------------- */
     // The effort slider drives playback speed live while dragging; the mascot
-    // strip reads it through useSpeed. Geometric ramp: slider ends are 30%–300%.
-    const SPEED_MIN = 0.3;
-    const SPEED_MAX = 3;
+    // strip reads it through useSpeed. Slider ends map onto the configured
+    // range (default 30%–300%) along a geometric ramp.
     let speedState = 1;
+    // 已保存的范围可能不包含 1×（例如自定义成 200%–500%），启动时先夹进去
+    speedState = Math.min(state.speedMax, Math.max(state.speedMin, speedState));
     const speedListeners = new Set();
-    function speedForRatio(ratio) {
+    function speedRange() {
+      return { min: state.speedMin, max: state.speedMax };
+    }
+    function speedAtRatio(ratio, range) {
+      const span = range || speedRange();
       const x = Math.min(1, Math.max(0, ratio));
-      return SPEED_MIN * Math.pow(SPEED_MAX / SPEED_MIN, x);
+      return Math.min(SPEED_CEIL, Math.max(SPEED_FLOOR, span.min * Math.pow(span.max / span.min, x)));
+    }
+    function ratioAtSpeed(value, range) {
+      const span = range || speedRange();
+      const clamped = Math.min(span.max, Math.max(span.min, value));
+      const ratio = Math.log(clamped / span.min) / Math.log(span.max / span.min);
+      return Math.min(1, Math.max(0, ratio));
     }
     function setSpeed(value) {
-      const next = Math.min(SPEED_MAX, Math.max(SPEED_MIN, value));
+      const span = speedRange();
+      const next = Math.min(span.max, Math.max(span.min, value));
       if (Math.abs(next - speedState) < 1e-6) return;
       speedState = next;
       for (const fn of speedListeners) fn();
@@ -620,6 +698,14 @@ window.__ModuleLoader__.load({
       .dsk-seg{display:inline-flex;gap:4px;padding:3px;border-radius:10px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1)}
       .dsk-seg-btn{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font-size:12px;padding:5px 12px;border-radius:8px;cursor:pointer;transition:background .15s,color .15s}
       .dsk-seg-btn[aria-pressed="true"]{background:var(--dsw-alias-brand-primary);color:#fff}
+      .dsk-range-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+      .dsk-range-field{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary)}
+      .dsk-num{width:66px;padding:5px 6px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:13px;text-align:right;box-sizing:border-box}
+      .dsk-num::-webkit-outer-spin-button,.dsk-num::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+      .dsk-num:focus{outline:none;border-color:var(--dsw-alias-brand-primary);box-shadow:0 0 0 1px var(--dsw-alias-brand-primary)}
+      .dsk-unit{font-size:12px;color:var(--dsw-alias-label-secondary)}
+      .dsk-range-now{margin-left:auto;font-size:12px;color:var(--dsw-alias-label-secondary)}
+      .dsk-range-reset{padding:4px 10px;font-size:12px}
       /* 全屏背景模式：插入主对话列内部（不挂 body，避免破坏窗口拖拽区）。
          列设为 isolation 后，z-index:-1 位于列背景之上、对话内容之下。 */
       .dsk-stage{position:absolute;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
@@ -644,6 +730,52 @@ window.__ModuleLoader__.load({
       const fileRef = React.useRef(null);
       const [busy, setBusy] = React.useState(false);
       const [message, setMessage] = React.useState("");
+      const speedNow = useSpeed();
+      const [rangeDraft, setRangeDraft] = React.useState({
+        min: String(Math.round(s.speedMin * 100)),
+        max: String(Math.round(s.speedMax * 100)),
+      });
+      const [rangeError, setRangeError] = React.useState("");
+      React.useEffect(() => {
+        setRangeDraft({
+          min: String(Math.round(s.speedMin * 100)),
+          max: String(Math.round(s.speedMax * 100)),
+        });
+      }, [s.speedMin, s.speedMax]);
+
+      /* 输入框里是百分比；提交时校验硬限制（10%–1000%）和最慢 < 最快，
+         不合法就退回已保存的值，绝不把非法范围写进设置。 */
+      function commitRange() {
+        const lo = Math.round(Number(rangeDraft.min));
+        const hi = Math.round(Number(rangeDraft.max));
+        const valid =
+          Number.isFinite(lo) && Number.isFinite(hi) &&
+          lo >= SPEED_FLOOR * 100 && hi <= SPEED_CEIL * 100 &&
+          lo >= SPEED_FLOOR * 100 && hi > lo && hi >= lo * SPEED_GAP;
+        if (!valid) {
+          setRangeError(translate("speedRangeInvalid"));
+          setRangeDraft({
+            min: String(Math.round(s.speedMin * 100)),
+            max: String(Math.round(s.speedMax * 100)),
+          });
+          return;
+        }
+        setRangeError("");
+        set({ speedMin: lo / 100, speedMax: hi / 100 });
+        setMessage(translate("speedRangeDone"));
+      }
+
+      function resetRange() {
+        setRangeError("");
+        set({ speedMin: SPEED_DEFAULTS.min, speedMax: SPEED_DEFAULTS.max });
+        setMessage(translate("speedRangeDone"));
+      }
+
+      const blurOnEnter = (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        event.currentTarget.blur();
+      };
 
       async function onPick(event) {
         const file = event.target.files && event.target.files[0];
@@ -779,6 +911,63 @@ window.__ModuleLoader__.load({
 
         h(
           "div",
+          { "data-dsh-kunkun": "speed-range" },
+          h("div", { className: "dsk-label" }, translate("speedRange")),
+          h("div", { className: "dsk-hint" }, translate("speedRangeHint")),
+          h(
+            "div",
+            { className: "dsk-range-row" },
+            h(
+              "label",
+              { className: "dsk-range-field" },
+              h("span", null, translate("speedRangeSlow")),
+              h("input", {
+                className: "dsk-num",
+                type: "number",
+                inputMode: "numeric",
+                min: Math.round(SPEED_FLOOR * 100),
+                max: Math.round(SPEED_CEIL * 100),
+                step: 5,
+                value: rangeDraft.min,
+                "aria-label": translate("speedRangeSlow"),
+                onChange: (event) => setRangeDraft({ ...rangeDraft, min: event.target.value }),
+                onBlur: commitRange,
+                onKeyDown: blurOnEnter,
+              }),
+              h("span", { className: "dsk-unit" }, "%")
+            ),
+            h("span", { className: "dsk-range-sep" }, "–"),
+            h(
+              "label",
+              { className: "dsk-range-field" },
+              h("span", null, translate("speedRangeFast")),
+              h("input", {
+                className: "dsk-num",
+                type: "number",
+                inputMode: "numeric",
+                min: Math.round(SPEED_FLOOR * 100),
+                max: Math.round(SPEED_CEIL * 100),
+                step: 5,
+                value: rangeDraft.max,
+                "aria-label": translate("speedRangeFast"),
+                onChange: (event) => setRangeDraft({ ...rangeDraft, max: event.target.value }),
+                onBlur: commitRange,
+                onKeyDown: blurOnEnter,
+              }),
+              h("span", { className: "dsk-unit" }, "%")
+            ),
+            h("span", { className: "dsk-range-now" }, translate("speedRangeNow") + " " + Math.round(speedNow * 100) + "%"),
+            h(
+              "button",
+              { type: "button", className: "dsk-button dsk-range-reset", onClick: resetRange },
+              translate("speedRangeDefault")
+            )
+          ),
+          rangeError && h("div", { className: "dsk-message", "data-tone": "error" }, rangeError)
+        ),
+
+        h(
+          "div",
           { className: "dsk-actions" },
           h("input", {
             ref: fileRef,
@@ -874,12 +1063,11 @@ window.__ModuleLoader__.load({
 
     /* 连续位置 ↔ 区域：滑轨按档位数均分为 N 个区域，
        落区即档位，位置本身连续（速度可取任意值）。 */
-    function ratioForSpeed(value) {
-      const ratio = Math.log(value / SPEED_MIN) / Math.log(SPEED_MAX / SPEED_MIN);
-      return Math.min(1, Math.max(0, ratio));
-    }
     function EffortSlider(props) {
       const { available, directory, load, select } = props;
+      const [settings] = useSettings();
+      // 速度范围来自设置；面板改完范围后，映射与位置会跟着重算。
+      const speedSpan = { min: settings.speedMin, max: settings.speedMax };
       const state = React.useSyncExternalStore(
         (listener) => (directory ? directory.subscribe(listener) : () => {}),
         () => (directory ? directory.getSnapshot() : null)
@@ -914,7 +1102,7 @@ window.__ModuleLoader__.load({
 
       // 位置优先级：拖动值 > 提交等待期的钉住位置 > 区域中心（外部改档时归中）
       // 纯调速模式没有区域可言，默认沿用当前速度对应的位置（进入调速模式时不跳变）
-      const defaultPos = () => (bindEffort ? centerOf(baseRegion) : Math.min(1, Math.max(0, ratioForSpeed(speed))));
+      const defaultPos = () => (bindEffort ? centerOf(baseRegion) : Math.min(1, Math.max(0, ratioAtSpeed(speed, speedSpan))));
       let value;
       if (dragValue !== null) value = dragValue;
       else if (heldRegion !== null) value = pos === null ? defaultPos() : pos;
@@ -924,10 +1112,10 @@ window.__ModuleLoader__.load({
         if (available && directory) load();
       }, [available, directory, load]);
 
-      // 位置即速度：任意连续值都映射到 30%–300%
+      // 位置即速度：任意连续值都按设置里的范围映射（默认 30%–300%）
       React.useEffect(() => {
-        setSpeed(speedForRatio(max > 0 ? value / max : 0));
-      }, [value, max]);
+        setSpeed(speedAtRatio(max > 0 ? value / max : 0, speedSpan));
+      }, [value, max, speedSpan.min, speedSpan.max]);
 
       // 宿主从别处改了档位（不是本次提交）→ 位置归到那个区域中心
       React.useEffect(() => {
@@ -979,7 +1167,7 @@ window.__ModuleLoader__.load({
       const commit = async (raw) => {
         setDragValue(null);
         setPos(raw); // 位置保持用户松手处，速度即该位置的值
-        setSpeed(speedForRatio(max > 0 ? raw / max : 0));
+        setSpeed(speedAtRatio(max > 0 ? raw / max : 0, speedSpan));
         if (!bindEffort) return; // 纯调速：无需提交档位
         const region = regionOf(raw);
         if (region === baseRegion || pendingRef.current) return;
