@@ -1,53 +1,43 @@
-# Kunkun skin（坤坤皮肤）
+# 坤坤皮肤（dsh-kunkun）
 
-Shows the Kunkun mascot fixed at the bottom-right corner of the DeepSeek Harness shell, with a settings page to switch the image — including your own uploaded picture.
+DeepSeek Harness 的外观插件：在界面显示坤坤立绘（静态图 / 篮球动图 / 自己上传的图片），并附带一个联动推理等级与动图播放速度的滑块。
 
-在 DeepSeek Harness 界面右下角固定显示坤坤立绘，并提供设置页切换立绘（静态图 / 篮球动图 / 自己上传的图片）。
-
-## Install / 安装
+## 安装
 
 ```sh
 dsh plugin add github:Junan-X/dsh-kunkun
 ```
 
-Or in the app: **Plugins → Add plugin** and enter the package spec above.
+也可以在应用内「插件 → 添加插件」输入上面的安装命令。安装后重启 DSH 生效。
 
-也可在应用内「插件 → 添加插件」输入上面的安装命令。
+## 设置
 
-Restart DSH after installing. 安装后重启 DSH 生效。
+两个入口打开同一套设置：**设置 → 坤坤皮肤**，或 **插件 → dsh-kunkun** 详情页的配置区。
 
-## Settings / 设置
-
-Two entries open the same panel: **Settings → Kunkun skin**, or the bundle's own page under **Plugins → dsh-kunkun**.
-
-两个入口打开同一面板：**设置 → 坤坤皮肤**，或 **插件 → dsh-kunkun** 详情页配置区。
-
-| Setting | Default | Behavior |
+| 设置项 | 默认 | 说明 |
 | --- | --- | --- |
-| Show mascot / 显示坤坤立绘 | on | Off hides the mascot; the settings entry stays available. |
-| Mascot image / 立绘样式 | basketball animation | Switch between the still Kunkun, the basketball animation, and an uploaded custom image (GIF/WebP/PNG/JPEG, ≤ 5 MB, stored in IndexedDB). |
-| Mascot placement / 动图位置 | bottom-right corner | `Bottom-right` shows the small mascot in the corner; `Full background` renders it as a slightly translucent layer behind the whole interface, fading out from right to left. |
+| 显示坤坤立绘 | 开 | 关闭后不再显示立绘，设置入口仍可打开 |
+| 立绘样式 | 篮球动图 | 在静态坤坤、篮球动图、自定义图片之间切换；支持上传 GIF / WebP / PNG / JPEG（≤ 5 MB，存在浏览器 IndexedDB） |
+| 动图位置 | 右下角 | 「右下角」显示小立绘；「全屏背景」铺在界面背景中，半透明并从右到左逐渐虚化 |
 
-## Effort slider / 推理等级滑块
+## 推理等级滑块
 
-A slider sits in the composer toolbar (**conversation.input.right**, next to the model selector):
+输入框工具排（模型选择器旁）有一个滑块：
 
-输入框工具排有一个滑块（模型选择器旁）：
+- **拖动**时篮球动图播放速度实时跟随，范围 30%–300%，可取任意值
+- 滑轨按当前模型的档位数 N 均分为 **N 个区域**：旋钮落在哪个区域就是哪个推理等级，位置本身决定速度
+- **松手**时若模型带了 ≥2 个推理档位，会通过官方 ModelDirectory 提交所在区域的档位
+- 模型没有档位元数据（常见于第三方模型）、子代理会话或服务不可用时，滑块不会消失，而是降级为**纯调速**模式
+- 速度由 CSS `steps()` 精灵条驱动（`<img>` 播放的 GIF 无法调速，所以内置动图改为逐帧精灵条）
+- 设置面板底部有诊断框，可查看滑块当前的注册、数据与模式状态
 
-- **Drag** — the basketball animation speed follows the slider live and continuously (30%–300%, any value).
-- **Release** — the nearest reasoning-effort stop is committed through the official ModelDirectory (`session.selectModel`), exactly like the effort control of the host.
-- The track is split into **N equal regions** (N = the current model's `reasoning.efforts` count). The knob can sit at **any** position — the region it lands in is the reasoning level, while the position itself sets the speed. Releasing commits that region's effort.
-- The slider **never hides**: when the model advertises ≥2 efforts it also commits the reasoning level; otherwise (third-party models without effort metadata, addressed subagent sessions, missing service) it degrades to a **speed-only** slider that still controls the animation.
-- If the model-directory service is unavailable the slider silently disappears — the rest of the skin keeps working.
-- **拖动**时篮球动图播放速度实时跟随（30%–300%，任意值）；滑轨按模型档位数 N 均分为 **N 个区域**，旋钮落在哪个区域就是哪个推理等级，位置本身决定速度。模型带 ≥2 个推理档位时，**松手**会通过官方 ModelDirectory 提交所在区域的档位。第三方模型没有档位元数据时滑块自动降级为**纯调速**模式（仍然显示、仍然变速）。速度由 CSS `steps()` 精灵条驱动（`<img>` GIF 无法调速，所以内置动图改为逐帧精灵条）。设置面板底部有诊断框，滑块状态一目了然。
+## 说明
 
-## Notes / 说明
+- 立绘纯装饰、不拦截鼠标点击（`pointer-events: none`）
+- 内置图片以 data URI 内嵌在 `client.js` 中；上传的图片只存在浏览器 IndexedDB，不联网
+- 全屏背景模式会临时把会话根容器的底色改为透明以便透出背景层，关闭该模式后自动还原
+- 在插件页停用该 bundle 即可移除立绘，不影响其他界面
 
-- The mascot is decorative and non-interactive (`pointer-events: none`); it never blocks clicks on the UI underneath.
-- Built-in images are embedded in `client.js` as data URIs; an uploaded image lives in the browser's IndexedDB, so nothing is sent over the network.
-- Disable the bundle in Plugins to remove the mascot; no other UI is changed.
-- 立绘纯装饰、不拦截鼠标事件；内置图片以 data URI 内嵌，上传图片存在浏览器 IndexedDB，不联网。在插件页停用该 bundle 即可移除。
-
-## License
+## 许可证
 
 MIT
