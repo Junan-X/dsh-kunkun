@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Kunkun skin",
-    "description": "Shows the Kunkun mascot at the bottom-right corner with a switch between the still image, the basketball animation, and your own uploaded picture. / 在界面右下角显示坤坤立绘，可切换静态图、篮球动图或上传自己的图片。",
+    "description": "Shows the Kunkun mascot at the bottom-right corner; switch between the still image, any animation listed in the manifest, or your own uploaded picture. Also adds a slider next to the model picker that sets reasoning effort and the animation speed at once.",
     "detail": "docs/DETAIL.md"
   }
 }

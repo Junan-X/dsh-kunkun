@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "坤坤皮肤",
-    "description": "在界面右下角显示坤坤立绘，可切换静态图、篮球动图或上传自己的图片。",
-    "detail": "docs/DETAIL.md"
+    "description": "在界面右下角显示坤坤立绘，可在静态图、清单里的每一张动图、自定义图片之间切换；输入框旁还有一个滑块，同时控制推理等级和动图播放速度。",
+    "detail": "docs/DETAIL.zh.md"
   }
 }
