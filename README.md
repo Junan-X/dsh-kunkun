@@ -17,7 +17,7 @@ dsh plugin add github:Junan-X/dsh-kunkun
 | 设置项 | 默认 | 说明 |
 | --- | --- | --- |
 | 显示坤坤立绘 | 开 | 关闭后不再显示立绘，设置入口仍可打开 |
-| 立绘样式 | 篮球动图 | 在静态坤坤、篮球动图、自定义图片之间切换；支持上传 GIF / WebP / PNG / JPEG（≤ 5 MB，存在浏览器 IndexedDB） |
+| 立绘样式 | 篮球动图 | 在静态坤坤、动图清单里的每一张动图、自定义图片之间切换；支持上传 GIF / WebP / PNG / JPEG（≤ 5 MB，存在浏览器 IndexedDB） |
 | 动图位置 | 右下角 | 「右下角」显示小立绘；「全屏背景」铺在界面背景中，半透明并从右到左逐渐虚化 |
 
 ## 推理等级滑块
@@ -31,10 +31,66 @@ dsh plugin add github:Junan-X/dsh-kunkun
 - 速度由 CSS `steps()` 精灵条驱动（`<img>` 播放的 GIF 无法调速，所以内置动图改为逐帧精灵条）
 - 设置面板底部有诊断框，可查看滑块当前的注册、数据与模式状态
 
+## 添加更多动图
+
+动图统一用**精灵条**：把 N 帧横向拼成一张图（例如 17 帧就是 17 张并排），存成 `.webp`。这样滑块才能通过 `steps()` 和 `animation-duration` 调速——直接放 GIF 或动画 WebP 的话，播放速度由图片自己决定，滑块控不了。
+
+一条命令搞定（需要本机有 `ffmpeg`；没有 libwebp 时会自动改用 `cwebp` 或 ImageMagick）。源文件可以是 GIF、MP4、WebM 或动画 WebP：
+
+```sh
+node scripts/make-anim.mjs 你的动图.gif --id kunkun2 --zh 坤坤二号 --en Kunkun 2
+```
+
+它会：
+
+1. 按源文件帧数切成逐帧，缩放到 180 宽、横向拼成精灵条，写到 `assets/anim/<id>.webp`
+2. 往 `assets/anim/manifest.json` 里加一条（帧数、帧时长、宽高比、名字）
+3. 重启 DSH 后，这张动图就出现在「设置 → 坤坤皮肤」的立绘样式里
+
+可选参数：`--frames`（帧数，默认自动探测；源动图帧太多时会按等间隔抽帧，例如 27 秒的视频可以用 `--frames 60`）、`--frame-ms`（每帧毫秒，默认按时长均分）、`--width`（每帧宽度，默认 180）、`--out`（输出文件）。
+
+注意精灵条是一张长图，总宽度（帧数 × 每帧宽度）不能超过 16384 px，脚本会提前拦住；一般 17–60 帧、180 px 宽足够用。
+
+### 直接使用现成的 .webp
+
+两条路随你选：
+
+1. **文件本身就是精灵条**（一张长图里并排 N 帧）：放进 `assets/anim/`，在 `assets/anim/manifest.json` 里加一条，`frames` 填真实帧数（其余字段照下表），不用跑脚本。
+2. **文件是普通动画 WebP / GIF，想原样播放**：命令加 `--native`，它只拷贝文件并写一条 `frames: 1` 的记录：
+
+   ```sh
+   node scripts/make-anim.mjs 你的动图.webp --id kunkun2 --native --zh 坤坤二号 --en Kunkun 2
+   ```
+
+   ```json
+   {
+     "id": "kunkun2",
+     "file": "anim/kunkun2.webp",
+     "frames": 1,
+     "aspect": 0.857143,
+     "rev": "1795443735984",
+     "label": { "zh": "坤坤二号", "en": "Kunkun 2" }
+   }
+   ```
+
+   `frames: 1` 表示由浏览器自己播放原图，**滑块的播放速度对它不生效**；想让它跟着滑块调速，就用不带 `--native` 的同一条命令重跑一次，会转成精灵条。
+
+也可以手动放图 + 手写清单，字段如下：
+
+| 字段 | 说明 |
+| --- | --- |
+| `id` | 唯一标识，字母/数字/`-`/`_` |
+| `file` | 相对 `assets/` 的路径，如 `anim/kunkun2.webp` |
+| `frames` | 帧数；≥ 2 按精灵条逐帧播放（可调速），填 `1` 或省略表示原图直接播放 |
+| `frameMs` | 每帧时长（毫秒），决定精灵条在滑块 100% 时的速度 |
+| `aspect` | 单帧宽高比（宽 ÷ 高） |
+| `rev` | 改图后改一下这个值，浏览器缓存随之失效 |
+| `label.zh` / `label.en` | 设置里显示的名字 |
+
 ## 说明
 
 - 立绘纯装饰、不拦截鼠标点击（`pointer-events: none`）
-- 内置图片以 data URI 内嵌在 `client.js` 中；上传的图片只存在浏览器 IndexedDB，不联网
+- 内置素材由插件 Host 半边注册一条 prefix 静态路由伺服整个 `assets/` 目录（`/plugins/dsh-kunkun/assets/*`），新增动图只放文件即可；上传的图片只存在浏览器 IndexedDB，不联网
 - 全屏背景模式会临时把会话根容器的底色改为透明以便透出背景层，关闭该模式后自动还原
 - 在插件页停用该 bundle 即可移除立绘，不影响其他界面
 
